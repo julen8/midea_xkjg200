@@ -44,7 +44,9 @@
 /**
  * I2C 通信速率配置
  */
-#define I2C_MASTER_FREQ     50000   // 主机 I2C 频率: 50kHz (适配 TS20 芯片)
+#define I2C_MASTER_FREQ     100000   // 主机 I2C 频率: 100kHz (适配 TS20 芯片)
+
+#define READ_BUFFER_SIZE    3       // 要从ts20读取数据的大小
 
 // ==================== 全局变量 ====================
 
@@ -59,7 +61,7 @@ auto I2C_Slave = TwoWire(1); // I2C1: 从机模式，用于响应上位机
  * 数据缓冲区
  * 使用 volatile 关键字，因为数据会在中断回调中被修改
  */
-volatile uint8_t readBuffer[4]; // 从 TS20 读取数据的临时缓冲区
+volatile uint8_t readBuffer[READ_BUFFER_SIZE]; // 从 TS20 读取数据的临时缓冲区
 
 /**
  * TS20 触摸状态寄存器缓存
@@ -130,7 +132,7 @@ const uint8_t ts20_init_data[][2] = {
  * - 接收 1 字节: 上位机请求读取某个寄存器 (该字节为寄存器地址)
  * - 接收 >1 字节: 上位机发送写入命令 (通常是初始化 TS20 的信号)
  */
-void onReceiveCallback(int numBytes) {
+void onReceiveCallback(const int numBytes) {
     if (numBytes == 1) {
         // 单字节: 上位机设置要读取的寄存器地址
         start_read_status = true;
@@ -139,6 +141,7 @@ void onReceiveCallback(int numBytes) {
         }
     } else if (numBytes > 1) {
         // 多字节: 上位机发送写命令，标记需要初始化 TS20
+        start_read_status = false;
         maybe_need_init_ts20 = true;
         I2C_Slave.flush(); // 清空接收缓冲区
     }
@@ -194,6 +197,71 @@ void init_ts20_registers() {
     Serial.println("TS20 寄存器初始化完成。\n");
 }
 
+/**
+* @brief 读取并更新 TS20 触摸芯片状态
+*
+* 从 TS20 的寄存器 0x20-0x22 连续读取触摸状态数据，
+* 进行有效性过滤后更新全局缓存变量。
+*/
+bool get_and_update_ts20_status() {
+    // 向 TS20 发送寄存器地址 0x20，准备连续读取 READ_BUFFER_SIZE 个寄存器
+    I2C_Master.beginTransmission(I2C_TARGET_ADDR);
+    I2C_Master.write(0x20); // 起始寄存器地址: 0x20
+    auto ret = I2C_Master.endTransmission(false); // 发送重复起始条件 (不释放总线)
+    if (ret != 0) {
+        return false;
+    }
+
+    // 请求读取 READ_BUFFER_SIZE 字节数据 (0x20, 0x21, 0x22)
+    ret = I2C_Master.requestFrom(static_cast<uint8_t>(I2C_TARGET_ADDR), static_cast<uint8_t>(READ_BUFFER_SIZE));
+    if (ret != READ_BUFFER_SIZE) {
+        return false;
+    }
+
+    // 读取返回的数据
+    uint8_t idx = 0;
+    while (idx < READ_BUFFER_SIZE && I2C_Master.available()) {
+        readBuffer[idx++] = I2C_Master.read();
+    }
+
+    // ===== 步骤3: 更新寄存器缓存 =====
+    if (idx != READ_BUFFER_SIZE) {
+        return false;
+    }
+    // readBuffer[0] readBuffer[1] readBuffer[2]的值
+    // 04 00 00 表示“开关”触摸按键
+    // 20 00 00 表示“经济”触摸按键
+    // 00 01 00 表示“风速+”触摸按键
+    // 10 00 00 表示“风速-”触摸按键
+
+    // 只有上面的值才是有效值，过滤出有效数据
+    // readBuffer[0] -> 04 | 20 | 00 | 10 = 34
+    // readBuffer[1] -> 00 | 00 | 01 | 00 = 01
+    // readBuffer[2] -> 00 | 00 | 00 | 00 = 00
+    if (0 != (readBuffer[0] & ~0x34) || 0 != (readBuffer[1] & ~0x01) || 0 != readBuffer[2]) {
+        // 非法数据，直接丢弃
+        return false;
+    }
+
+    if (readBuffer[0] != 0 || readBuffer[1] != 0) {
+        Serial.print("TS20 触摸状态: ");
+        Serial.printf("read_buff:%02X %02X\n", readBuffer[0], readBuffer[1]);
+    }
+
+    // 注意: 这里如果按照正常的顺序赋值，反而在上位机中看到的数据顺序是错位的
+    // 问题肯定不是ts20芯片，因为上位机和ts20直接通信时是正常的
+    // 这里认为的调整一下顺序: [0x22的值, 0x20的值, 0x21的值]
+    // 上位机 0x20 -> readBuffer[1]
+    // 上位机 0x21 -> readBuffer[2]
+    // 上位机 0x22 -> readBuffer[0]
+    // TODO: 后续需要进一步排查原因
+    ts20_reg22 = readBuffer[0];
+    ts20_reg20 = readBuffer[1];
+    ts20_reg21 = readBuffer[2];
+
+    return true;
+}
+
 // ==================== 主程序 ====================
 
 /**
@@ -231,11 +299,11 @@ void setup() {
     I2C_Slave.onReceive(onReceiveCallback); // 注册接收回调
     I2C_Slave.onRequest(onRequestCallback); // 注册请求回调
     auto ret = I2C_Slave.begin((uint8_t) I2C_SLAVE_ADDR, I2C_SLAVE_SDA, I2C_SLAVE_SCL, 0);
-    Serial.printf("[OK] I2C 从机初始化完成:%s", ret ? "成功" : " [失败！]");
+    Serial.printf("I2C 从机初始化完成:%s\n", ret ? "成功" : " [失败！]");
 
     // 初始化 I2C 主机：配置引脚和通信频率
     ret = I2C_Master.begin(I2C_MASTER_SDA, I2C_MASTER_SCL, I2C_MASTER_FREQ);
-    Serial.printf("\n[OK] I2C 主机初始化完成:%s\n", ret ? "成功" : " [失败！]");
+    Serial.printf("I2C 主机初始化完成:%s\n", ret ? "成功" : " [失败！]");
 
 
     Serial.println("\n────────── 等待通信 ──────────\n");
@@ -262,33 +330,7 @@ void loop() {
     // ===== 步骤2: 读取 TS20 触摸状态 =====
     if (start_read_status) {
         is_called_init = false; // 重置初始化标志，允许下次重新初始化
-
-        // 向 TS20 发送寄存器地址 0x20，准备连续读取 3 个寄存器
-        I2C_Master.beginTransmission(I2C_TARGET_ADDR);
-        I2C_Master.write(0x20); // 起始寄存器地址: 0x20
-        I2C_Master.endTransmission(false); // 发送重复起始条件 (不释放总线)
-
-        // 请求读取 3 字节数据 (0x20, 0x21, 0x22)
-        I2C_Master.requestFrom(static_cast<uint8_t>(I2C_TARGET_ADDR), static_cast<uint8_t>(3));
-
-        // 读取返回的数据
-        uint8_t idx = 0;
-        while (idx < 3 && I2C_Master.available()) {
-            readBuffer[idx++] = I2C_Master.read();
-        }
-
-        // ===== 步骤3: 更新寄存器缓存 =====
-        if (idx == 3) {
-            Serial.printf("read_buff:%02X %02X %02X\n", readBuffer[0], readBuffer[1], readBuffer[2]);
-
-            // 注意: 这里如果按照正常的顺序赋值，反而在上位机中看到的数据顺序是错位的
-            // 问题肯定不是ts20芯片，因为上位机和ts20直接通信时是正常的
-            // 这里认为的调整一下顺序: [0x22的值, 0x20的值, 0x21的值]
-            // TODO: 后续需要进一步排查原因
-            ts20_reg22 = readBuffer[0];
-            ts20_reg20 = readBuffer[1];
-            ts20_reg21 = readBuffer[2];
-        }
+        get_and_update_ts20_status();
     } else {
         // 未开始读取时，清零缓存
         ts20_reg20 = 0;
