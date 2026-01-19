@@ -1,0 +1,21 @@
+import esphome.codegen as cg
+import esphome.config_validation as cv
+from esphome.const import CONF_ID
+
+CODEOWNERS = ["@julen"]
+DEPENDENCIES = []
+AUTO_LOAD = []
+MULTI_CONF = False
+
+ts20_fan_ns = cg.esphome_ns.namespace("ts20_fan")
+TS20FanController = ts20_fan_ns.class_("TS20FanController", cg.Component)
+
+
+CONFIG_SCHEMA = cv.Schema({
+    cv.GenerateID(): cv.declare_id(TS20FanController),
+}).extend(cv.COMPONENT_SCHEMA)
+
+
+async def to_code(config):
+    var = cg.new_Pvariable(config[CONF_ID])
+    await cg.register_component(var, config)

@@ -1,0 +1,139 @@
+# ESPHome 风扇控制器配置
+# 通过模拟 TS20 触摸芯片按键来控制风扇
+#
+# 功能说明:
+# 1. 作为 I2C 从机响应上位机读取触摸芯片状态
+# 2. 作为 I2C 主机控制 TS20 触摸芯片
+# 3. 通过模拟按键控制风扇风速 (0=关闭, 1=低, 2=中, 3=高)
+# 4. 读取风速状态引脚获取当前风速
+
+esphome:
+  name: fan-controller
+  friendly_name: "智能风扇控制器"
+
+# ESP32 平台配置
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# 加载外部组件
+external_components:
+  - source:
+      type: local
+      path: components
+
+# WiFi 配置
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # 备用热点 (如果无法连接到WiFi)
+  ap:
+    ssid: "Fan-Controller-AP"
+    password: "12345678"
+
+# 启用 captive portal (用于配置WiFi)
+captive_portal:
+
+web_server:
+  port: 80
+  version: 3
+  include_internal: true
+
+# 启用日志
+logger:
+  level: DEBUG
+
+# 启用 Home Assistant API
+api:
+  encryption:
+    key: "W8fR3JCsVHSetm1D+kk5EGaWuPVRYuNmjTQYX2QpeJQ="
+
+# OTA 更新
+ota:
+  - platform: esphome
+    password: !secret ota_key
+
+# TS20 风扇控制器组件
+ts20_fan:
+  id: ts20_controller
+
+# 风扇组件
+fan:
+  - platform: template
+    name: "风扇"
+    id: main_fan
+    has_direction: false
+    has_oscillating: false
+    speed_count: 3
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      then:
+        - lambda: |-
+            int speed = id(main_fan).speed;
+            if (speed == 0) speed = 1;  // 默认低风速
+            id(ts20_controller)->set_fan_speed(speed);
+    on_turn_off:
+      then:
+        - lambda: |-
+            id(ts20_controller)->set_fan_speed(0);
+    on_speed_set:
+      then:
+        - lambda: |-
+            if (id(main_fan).state) {
+              id(ts20_controller)->set_fan_speed(id(main_fan).speed);
+            }
+
+# 风速状态传感器 (用于显示当前实际风速档位: 0-3)
+sensor:
+  - platform: template
+    name: "当前风速档位"
+    id: current_fan_speed
+    icon: "mdi:fan"
+    accuracy_decimals: 0
+    update_interval: 500ms
+    lambda: |-
+      return id(ts20_controller)->get_current_speed();
+    on_value:
+      then:
+        - lambda: |-
+            // 同步风扇状态到 ESPHome 风扇组件
+            auto call = id(main_fan).make_call();
+            int speed = (int)x;
+            if (speed == 0) {
+              call.set_state(false);
+            } else {
+              call.set_state(true);
+              call.set_speed(speed);
+            }
+            call.perform();
+
+
+# 调试开关
+switch:
+  - platform: template
+    name: "重新初始化 TS20"
+    id: reinit_ts20
+    icon: "mdi:refresh"
+    turn_on_action:
+      - lambda: |-
+          id(ts20_controller)->init_ts20_registers();
+      - switch.turn_off: reinit_ts20
+
+# 文本传感器 - 显示风速状态文字
+text_sensor:
+  - platform: template
+    name: "风速状态"
+    id: fan_speed_text
+    icon: "mdi:fan"
+    update_interval: 500ms
+    lambda: |-
+      int speed = id(ts20_controller)->get_current_speed();
+      switch (speed) {
+        case 0: return std::string("关闭");
+        case 1: return std::string("低风速");
+        case 2: return std::string("中风速");
+        case 3: return std::string("高风速");
+        default: return std::string("未知");
+      }
