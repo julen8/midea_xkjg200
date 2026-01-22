@@ -1,15 +1,15 @@
-# ESPHome 风扇控制器配置
-# 通过模拟 TS20 触摸芯片按键来控制风扇
+# 美的xkjg200新风控制器
+# 通过模拟 TS20 触摸芯片按键来控制新风
 #
 # 功能说明:
-# 1. 作为 I2C 从机响应上位机读取触摸芯片状态
+# 1. 作为 I2C 从机响应上位机(xkjg200控制面板)读取触摸芯片状态
 # 2. 作为 I2C 主机控制 TS20 触摸芯片
 # 3. 通过模拟按键控制风扇风速 (0=关闭, 1=低, 2=中, 3=高)
-# 4. 读取风速状态引脚获取当前风速
+# 4. 读取风速状态引脚(xkjg200控制面板的led灯状态)获取当前风速
 
 esphome:
   name: fan-controller
-  friendly_name: "智能风扇控制器"
+  friendly_name: "新风控制器"
 
 # ESP32 平台配置
 esp32:
@@ -30,7 +30,7 @@ wifi:
 
   # 备用热点 (如果无法连接到WiFi)
   ap:
-    ssid: "Fan-Controller-AP"
+    ssid: "xkjg200-AP"
     password: "12345678"
 
 # 启用 captive portal (用于配置WiFi)
@@ -43,7 +43,7 @@ web_server:
 
 # 启用日志
 logger:
-  level: DEBUG
+  level: INFO
 
 # 启用 Home Assistant API
 api:
@@ -57,12 +57,12 @@ ota:
 
 # TS20 风扇控制器组件
 ts20_fan:
-  id: ts20_controller
+  id: xkjg200_controller
 
 # 风扇组件
 fan:
   - platform: template
-    name: "风扇"
+    name: "新风"
     id: main_fan
     has_direction: false
     has_oscillating: false
@@ -72,17 +72,17 @@ fan:
       then:
         - lambda: |-
             int speed = id(main_fan).speed;
-            if (speed == 0) speed = 1;  // 默认低风速
-            id(ts20_controller)->set_fan_speed(speed);
+            if (speed == 0) speed = 2;  // 默认中风速
+            id(xkjg200_controller)->set_fan_speed(speed);
     on_turn_off:
       then:
         - lambda: |-
-            id(ts20_controller)->set_fan_speed(0);
+            id(xkjg200_controller)->set_fan_speed(0);
     on_speed_set:
       then:
         - lambda: |-
             if (id(main_fan).state) {
-              id(ts20_controller)->set_fan_speed(id(main_fan).speed);
+              id(xkjg200_controller)->set_fan_speed(id(main_fan).speed);
             }
 
 # 风速状态传感器 (用于显示当前实际风速档位: 0-3)
@@ -94,7 +94,7 @@ sensor:
     accuracy_decimals: 0
     update_interval: 500ms
     lambda: |-
-      return id(ts20_controller)->get_current_speed();
+      return id(xkjg200_controller)->get_current_speed();
     on_value:
       then:
         - lambda: |-
@@ -113,12 +113,13 @@ sensor:
 # 调试开关
 switch:
   - platform: template
-    name: "重新初始化 TS20"
+    name: "重新初始化TS20触摸芯片"
     id: reinit_ts20
     icon: "mdi:refresh"
+    internal: true
     turn_on_action:
       - lambda: |-
-          id(ts20_controller)->init_ts20_registers();
+          id(xkjg200_controller)->init_ts20_registers();
       - switch.turn_off: reinit_ts20
 
 # 文本传感器 - 显示风速状态文字
@@ -129,7 +130,7 @@ text_sensor:
     icon: "mdi:fan"
     update_interval: 500ms
     lambda: |-
-      int speed = id(ts20_controller)->get_current_speed();
+      int speed = id(xkjg200_controller)->get_current_speed();
       switch (speed) {
         case 0: return std::string("关闭");
         case 1: return std::string("低风速");
