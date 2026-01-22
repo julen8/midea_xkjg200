@@ -26,8 +26,8 @@ static constexpr uint8_t PIN_FAN_SPEED_LOW  = 25;
 static constexpr uint8_t PIN_FAN_SPEED_MID  = 26;
 static constexpr uint8_t PIN_FAN_SPEED_HIGH = 27;
 
-// 上位机复位控制引脚 (低电平复位)
-static constexpr uint8_t PIN_HOST_RESET = 4;
+// 上位机电源控制引脚 (低电平上位机断电)
+static constexpr uint8_t PIN_HOST_POWER = 4;
 
 static constexpr uint8_t READ_BUFFER_SIZE = 3;
 
@@ -69,7 +69,7 @@ static volatile bool maybe_need_init_ts20 = false;
 static volatile bool ts20_is_called_init  = false;
 
 // 当前风速状态
-static volatile FanSpeedState current_fan_speed_state = FanSpeedState::FAN_SPEED_OFF;
+static volatile auto current_fan_speed_state = FanSpeedState::FAN_SPEED_OFF;
 
 // ==================== TS20 初始化数据 ====================
 
@@ -97,22 +97,24 @@ static const uint8_t ts20_init_data[][2] = {
 
 // ==================== I2C 回调函数 ====================
 
-static void ts20_on_receive_callback(int numBytes) {
+static void ts20_on_receive_callback(const int numBytes) {
     static uint8_t need_init_counter = 0;
 
     if (numBytes == 1) {
         need_init_counter = 0;
         start_read_status = true;
+
         if (I2C_Slave_Bus.available()) {
             ts20_now_read_reg = I2C_Slave_Bus.read();
         }
     } else if (numBytes > 1) {
+        I2C_Slave_Bus.flush();
+
         start_read_status = false;
         if (need_init_counter++ > 5) {
             need_init_counter    = 0;
             maybe_need_init_ts20 = true;
         }
-        I2C_Slave_Bus.flush();
     }
 }
 
@@ -147,19 +149,12 @@ public:
     bool master_init_status = false;
 
     void setup() override {
-        // 首先将上位机复位引脚拉低，使上位机进入复位状态
-        pinMode(PIN_HOST_RESET, OUTPUT);
-        digitalWrite(PIN_HOST_RESET, LOW);
-        ESP_LOGI("ts20_fan", "Host reset pin (GPIO%d) pulled LOW, host in reset state", PIN_HOST_RESET);
-
-        // 等待上位机进入复位状态
-        delay(50);
-
-        // 初始化 I2C 从机
-        I2C_Slave_Bus.onReceive(ts20_on_receive_callback);
-        I2C_Slave_Bus.onRequest(ts20_on_request_callback);
-        slave_init_status = I2C_Slave_Bus.begin(I2C_SLAVE_ADDR, I2C_SLAVE_SDA, I2C_SLAVE_SCL, 0);
-        ESP_LOGI("ts20_fan", "I2C Slave init: %s", slave_init_status ? "OK" : "FAILED");
+        // 首先将上位机电源断开
+        ESP_LOGI("ts20_fan", "Host power pin (GPIO%d) pulled LOW", PIN_HOST_POWER);
+        pinMode(PIN_HOST_POWER, OUTPUT);
+        digitalWrite(PIN_HOST_POWER, LOW);
+        // 等待上位机掉电稳定
+        delay(500);
 
         // 初始化风速状态输入引脚
         pinMode(PIN_FAN_SPEED_LOW, INPUT_PULLUP);
@@ -170,12 +165,15 @@ public:
         master_init_status = I2C_Master_Bus.begin(I2C_MASTER_SDA, I2C_MASTER_SCL, I2C_MASTER_FREQ);
         ESP_LOGI("ts20_fan", "I2C Master init: %s", master_init_status ? "OK" : "FAILED");
 
-        // 读取初始风速状态
-        update_speed_pins();
+        // 初始化 I2C 从机
+        I2C_Slave_Bus.onReceive(ts20_on_receive_callback);
+        I2C_Slave_Bus.onRequest(ts20_on_request_callback);
+        slave_init_status = I2C_Slave_Bus.begin(I2C_SLAVE_ADDR, I2C_SLAVE_SDA, I2C_SLAVE_SCL, 0);
+        ESP_LOGI("ts20_fan", "I2C Slave init: %s", slave_init_status ? "OK" : "FAILED");
 
-        // ESP32 初始化完成，将复位引脚改为高电平，释放上位机复位
-        digitalWrite(PIN_HOST_RESET, HIGH);
-        ESP_LOGI("ts20_fan", "Host reset pin (GPIO%d) pulled HIGH, host released from reset state", PIN_HOST_RESET);
+        // ESP32 初始化完成，上位机上电
+        ESP_LOGI("ts20_fan", "Host power pin (GPIO%d) pulled HIGH", PIN_HOST_POWER);
+        digitalWrite(PIN_HOST_POWER, HIGH);
 
         ESP_LOGI("ts20_fan", "TS20 Fan Controller initialized");
     }
@@ -212,7 +210,7 @@ public:
         return setup_priority::HARDWARE;
     }
 
-    void init_ts20_registers() {
+    static void init_ts20_registers() {
         ESP_LOGI("ts20_fan", "Initializing TS20 registers...");
 
         for (size_t i = 0; i < sizeof(ts20_init_data) / sizeof(ts20_init_data[0]); i++) {
@@ -226,7 +224,7 @@ public:
         ESP_LOGI("ts20_fan", "TS20 registers initialized");
     }
 
-    void update_speed_pins() {
+    static void update_speed_pins() {
         FanSpeedState new_state;
 
         if (digitalRead(PIN_FAN_SPEED_LOW) == LOW) {
@@ -246,11 +244,11 @@ public:
         }
     }
 
-    int get_current_speed() {
+    static int get_current_speed() {
         return static_cast<int>(current_fan_speed_state);
     }
 
-    void set_fan_speed(int speed, int retry_count = 3) {
+    static void set_fan_speed(const int speed, const int retry_count = 3) {
         ESP_LOGI("ts20_fan", "Setting fan speed: %d", speed);
 
         // 如果目标不是关闭且当前已关闭，先开启风扇
@@ -295,11 +293,14 @@ public:
                     simulate_key_press(FanKey::FAN_SPEED_UP);
                 }
                 break;
+            default:
+                ESP_LOGW("ts20_fan", "Invalid speed %d, must be 0-3", speed);
+                return;
         }
 
         // 验证设置结果
         update_speed_pins();
-        int current = get_current_speed();
+        const int current = get_current_speed();
         if (current != speed && retry_count > 0) {
             ESP_LOGW("ts20_fan", "Speed set failed, retrying... (%d left)", retry_count - 1);
             set_fan_speed(speed, retry_count - 1);
@@ -307,36 +308,55 @@ public:
     }
 
 private:
-    void update_ts20_status_cache() {
+    static void update_ts20_status_cache() {
         if (ts20_read_buffer[0] != 0 || ts20_read_buffer[1] != 0) {
-            ESP_LOGI("ts20_fan", "TS20 touch: %02X %02X %02X", ts20_read_buffer[0], ts20_read_buffer[1],
+            ESP_LOGD("ts20_fan", "TS20 touch: %02X %02X %02X", ts20_read_buffer[0], ts20_read_buffer[1],
                      ts20_read_buffer[2]);
         }
 
+        // 注意: 这里如果按照正常的顺序赋值，反而在上位机中看到的数据顺序是错位的
+        // 问题肯定不是ts20芯片，因为上位机和ts20直接通信时是正常的
+        // 这里人为的调整一下顺序: [0x22的值, 0x20的值, 0x21的值]
+        // 上位机 0x20 -> readBuffer[1]
+        // 上位机 0x21 -> readBuffer[2]
+        // 上位机 0x22 -> readBuffer[0]
         ts20_reg22 = ts20_read_buffer[0];
         ts20_reg20 = ts20_read_buffer[1];
         ts20_reg21 = ts20_read_buffer[2];
     }
 
-    bool get_and_update_ts20_status() {
+    static bool get_and_update_ts20_status() {
         I2C_Master_Bus.beginTransmission(I2C_TARGET_ADDR);
         I2C_Master_Bus.write(0x20);
         auto ret = I2C_Master_Bus.endTransmission(false);
-        if (ret != 0)
+        if (ret != 0) {
             return false;
+        }
 
         ret = I2C_Master_Bus.requestFrom((uint8_t)I2C_TARGET_ADDR, (uint8_t)READ_BUFFER_SIZE);
-        if (ret != READ_BUFFER_SIZE)
+        if (ret != READ_BUFFER_SIZE) {
             return false;
+        }
 
         uint8_t idx = 0;
         while (idx < READ_BUFFER_SIZE && I2C_Master_Bus.available()) {
             ts20_read_buffer[idx++] = I2C_Master_Bus.read();
         }
 
-        if (idx != READ_BUFFER_SIZE)
+        if (idx != READ_BUFFER_SIZE) {
             return false;
+        }
 
+        // readBuffer[0] readBuffer[1] readBuffer[2]的值
+        // 04 00 00 表示“开关”触摸按键
+        // 20 00 00 表示“经济”触摸按键
+        // 00 01 00 表示“风速+”触摸按键
+        // 10 00 00 表示“风速-”触摸按键
+
+        // 只有上面的值才是有效值，过滤出有效数据
+        // readBuffer[0] -> 04 | 20 | 00 | 10 = 34
+        // readBuffer[1] -> 00 | 00 | 01 | 00 = 01
+        // readBuffer[2] -> 00 | 00 | 00 | 00 = 00
         if (0 != (ts20_read_buffer[0] & ~0x34) || 0 != (ts20_read_buffer[1] & ~0x01) || 0 != ts20_read_buffer[2]) {
             return false;
         }
@@ -345,7 +365,7 @@ private:
         return true;
     }
 
-    void simulate_key_press(FanKey key_code) {
+    static void simulate_key_press(const FanKey key_code) {
         switch (key_code) {
             case FanKey::POWER:
                 ts20_read_buffer[0] = 0x04;
