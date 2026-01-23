@@ -1,149 +1,172 @@
-# ESPHome 智能风扇控制器
+# 美的 XKJG200 新风控制器 ESPHome 组件
 
-本项目将ESP32风扇控制器代码改造为ESPHome组件，可以通过Home Assistant控制风扇。
+本项目使用 ESPHome 和 ESP32 来控制美的 XKJG200 新风系统，通过模拟 TS20 触摸芯片按键来实现风扇控制。
 
 ## 功能特性
 
-- ✅ 风扇开关控制
-- ✅ 3档风速调节（低/中/高）
-- ✅ 实时风速状态反馈
-- ✅ 通过Home Assistant控制
-- ✅ 支持OTA无线升级
-- ✅ 兼容原有上位机通信协议
+- ✅ 通过 Home Assistant 远程控制新风系统
+- ✅ 支持3档风速调节（低/中/高）
+- ✅ 实时显示当前风速状态
+- ✅ Web 界面控制
+- ✅ OTA 固件更新
+
+## 工作原理
+
+```
+┌─────────────────┐      I2C (从机)      ┌─────────────────┐
+│   XKJG200       │ ◄──────────────────► │                 │
+│   控制面板       │                       │     ESP32       │
+│   (上位机)       │      风速LED状态      │                 │
+│                 │ ────────────────────► │                 │
+└─────────────────┘                       └────────┬────────┘
+                                                   │
+                                                   │ I2C (主机)
+                                                   ▼
+                                          ┌─────────────────┐
+                                          │   TS20 触摸芯片  │
+                                          └─────────────────┘
+```
+
+ESP32 同时作为：
+1. **I2C 从机**：响应上位机(XKJG200控制面板)读取触摸芯片状态
+2. **I2C 主机**：控制 TS20 触摸芯片
+3. **状态监测**：读取风速状态引脚获取当前风速
 
 ## 硬件连接
 
-### I2C 从机总线（响应上位机）
-| 引脚 | GPIO | 说明 |
-|------|------|------|
-| SDA | GPIO21 | I2C数据线 |
-| SCL | GPIO22 | I2C时钟线 |
-| 地址 | 0x7A | 从机地址 |
+### I2C 从机配置 (连接上位机)
 
-### I2C 主机总线（控制TS20触摸芯片）
-| 引脚 | GPIO | 说明 |
-|------|------|------|
-| SDA | GPIO16 | I2C数据线 |
-| SCL | GPIO17 | I2C时钟线 |
-| 地址 | 0x7A | TS20地址 |
+| ESP32 引脚 | 功能 |
+|-----------|------|
+| GPIO 21   | SDA  |
+| GPIO 22   | SCL  |
 
-### 风速状态输入引脚（低电平有效）
-| 引脚 | GPIO | 说明 |
-|------|------|------|
-| 低风速 | GPIO25 | 低风速状态指示 |
-| 中风速 | GPIO26 | 中风速状态指示 |
-| 高风速 | GPIO27 | 高风速状态指示 |
+I2C 从机地址：`0x7A`
+
+### I2C 主机配置 (连接 TS20 触摸芯片)
+
+| ESP32 引脚 | 功能 |
+|-----------|------|
+| GPIO 16   | SDA  |
+| GPIO 17   | SCL  |
+
+I2C 主机频率：100kHz，目标地址：`0x7A`
+
+### 风速状态输入引脚 (LED 状态检测，低电平有效)
+
+| ESP32 引脚 | 功能     |
+|-----------|----------|
+| GPIO 25   | 低风速   |
+| GPIO 26   | 中风速   |
+| GPIO 27   | 高风速   |
+
+### 上位机电源控制
+
+| ESP32 引脚 | 功能                    |
+|-----------|------------------------|
+| GPIO 4    | 上位机电源控制（低电平断电）|
 
 ## 文件结构
 
 ```
 esphome/
-├── fan-controller.yaml          # ESPHome主配置文件
-├── secrets.yaml                 # 密钥配置（WiFi密码等）
-├── README.md                    # 本文档
+├── README.md                      # 本文档
+├── example_secrets.yaml           # 密钥配置示例
+├── fan-controller.yaml            # ESPHome 主配置文件
 └── components/
-    └── ts20_fan/
-        └── ts20_fan.h           # TS20风扇控制器自定义组件
+    └── xkjg200_fan/
+        ├── __init__.py            # ESPHome 组件定义
+        └── xkjg200_fan.h          # 组件核心实现
 ```
 
-## 安装使用
+## 快速开始
 
-### 1. 配置secrets.yaml
+### 1. 配置密钥文件
 
-编辑 `secrets.yaml` 文件，填入你的WiFi和API密钥：
+复制示例密钥文件并修改为实际配置：
+
+```bash
+cp example_secrets.yaml secrets.yaml
+```
+
+编辑 `secrets.yaml`：
 
 ```yaml
 wifi_ssid: "你的WiFi名称"
 wifi_password: "你的WiFi密码"
-api_encryption_key: "你的API密钥"  # 可用 openssl rand -base64 32 生成
-ota_password: "你的OTA密码"
+api_xkjg200_key: "你的API加密密钥"
+ota_key: "你的OTA密码"
 ```
 
-### 2. 安装ESPHome
+> 💡 可使用 `openssl rand -base64 32` 生成 API 加密密钥
+
+### 2. 编译和上传
+
+使用 ESPHome 编译并上传固件：
 
 ```bash
-pip install esphome
-```
-
-### 3. 编译并上传
-
-```bash
-cd esphome
 esphome run fan-controller.yaml
 ```
 
-首次上传需要USB连接，之后可以通过OTA无线更新。
+### 3. 添加到 Home Assistant
 
-### 4. 添加到Home Assistant
+固件上传后，Home Assistant 会自动发现设备。使用配置文件中的 API 加密密钥添加设备即可。
 
-设备启动后，Home Assistant会自动发现该设备。在Home Assistant中：
+## 组件使用
 
-1. 进入 **设置** → **设备与服务**
-2. 找到 **ESPHome** 集成
-3. 点击 **配置** 添加设备
-
-## Home Assistant 控制
-
-添加设备后，你将获得以下实体：
-
-| 实体 | 类型 | 说明 |
-|------|------|------|
-| `fan.风扇` | 风扇 | 主风扇控制，支持开关和3档调速 |
-| `sensor.当前风速档位` | 传感器 | 显示当前风速档位(0-3) |
-| `text_sensor.风速状态` | 文本传感器 | 显示中文风速状态 |
-| `switch.重新初始化_ts20` | 开关 | 手动重新初始化TS20芯片 |
-
-### 自动化示例
+### 配置示例
 
 ```yaml
-# 定时开启风扇
-automation:
-  - alias: "晚上开启风扇"
-    trigger:
-      - platform: time
-        at: "22:00:00"
-    action:
-      - service: fan.turn_on
-        target:
-          entity_id: fan.风扇
-        data:
-          percentage: 33  # 低风速
+# 加载外部组件
+external_components:
+  - source: github://julen8/midea_xkjg200
+    components: [ xkjg200_fan ]
+
+# xkjg200 风扇控制器组件
+xkjg200_fan:
+  id: xkjg200_controller
+
+# 风扇组件
+fan:
+  - platform: template
+    name: "新风"
+    id: main_fan
+    speed_count: 3
+    on_turn_on:
+      - lambda: |-
+          int speed = id(main_fan).speed;
+          if (speed == 0) speed = 2;
+          id(xkjg200_controller)->set_fan_speed(speed);
+    on_turn_off:
+      - lambda: |-
+          id(xkjg200_controller)->set_fan_speed(0);
 ```
 
-## 风速对应关系
+> 具体配置参见 `fan-controller.yaml`
 
-| ESPHome Speed | 档位 | 百分比 |
-|---------------|------|--------|
-| 0 | 关闭 | 0% |
-| 1 | 低风速 | 33% |
-| 2 | 中风速 | 66% |
-| 3 | 高风速 | 100% |
+### API 方法
 
-## 调试
+| 方法 | 说明 |
+|------|------|
+| `set_fan_speed(int speed)` | 设置风速：0=关闭, 1=低, 2=中, 3=高 |
+| `get_current_speed()` | 获取当前风速档位 (0-3) |
+| `init_ts20_registers()` | 重新初始化 TS20 触摸芯片寄存器 |
 
-查看设备日志：
+## 触摸按键编码
 
-```bash
-esphome logs fan-controller.yaml
-```
+| 按键 | 数据 (buffer[0], buffer[1], buffer[2]) |
+|------|---------------------------------------|
+| 开关 | `0x04, 0x00, 0x00` |
+| 经济 | `0x20, 0x00, 0x00` |
+| 风速+ | `0x00, 0x01, 0x00` |
+| 风速- | `0x10, 0x00, 0x00` |
 
-## 注意事项
+## Web 界面
 
-1. 本组件同时作为I2C从机和主机，因此使用两个独立的I2C硬件控制器
-2. 如果需要修改引脚配置，请同时修改 `fan-controller.yaml` 和 `components/ts20_fan/ts20_fan.h`
-3. 首次使用时，上位机需要发送初始化命令来初始化TS20芯片
+设备启动后可通过 `http://<设备IP>/` 访问 Web 界面进行控制。
 
-## 故障排除
+如果无法连接 WiFi，设备会创建一个名为 `xkjg200-AP` 的热点（密码：`12345678`），连接后可通过 captive portal 配置 WiFi。
 
-### 无法连接WiFi
-- 检查 `secrets.yaml` 中的WiFi配置
-- 设备会创建名为 "Fan-Controller-AP" 的热点，可通过该热点重新配置
+## 作者
 
-### 风速控制无响应
-- 检查I2C接线是否正确
-- 使用"重新初始化TS20"开关尝试重新初始化
-- 查看日志排查问题
-
-### Home Assistant无法发现设备
-- 确保设备和HA在同一网络
-- 检查API加密密钥配置
+@julen

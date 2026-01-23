@@ -47,7 +47,7 @@ logger:
 # 启用 Home Assistant API
 api:
   encryption:
-    key: "W8fR3JCsVHSetm1D+kk5EGaWuPVRYuNmjTQYX2QpeJQ="
+    key: !secret api_xkjg200_key
 
 # OTA 更新
 ota:
@@ -109,7 +109,7 @@ sensor:
             call.perform();
 
 
-# 调试开关
+# 仅调试用 - 重新初始化 TS20 触摸芯片寄存器
 switch:
   - platform: template
     name: "重新初始化TS20触摸芯片"
