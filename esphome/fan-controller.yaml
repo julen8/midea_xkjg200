@@ -19,9 +19,8 @@ esp32:
 
 # 加载外部组件
 external_components:
-  - source:
-      type: local
-      path: components
+  - source: github://julen8/midea_xkjg200
+    components: [ xkjg200_fan ]
 
 # WiFi 配置
 wifi:
@@ -55,8 +54,8 @@ ota:
   - platform: esphome
     password: !secret ota_key
 
-# TS20 风扇控制器组件
-ts20_fan:
+# xkjg200 风扇控制器组件
+xkjg200_fan:
   id: xkjg200_controller
 
 # 风扇组件

@@ -7,12 +7,11 @@ DEPENDENCIES = []
 AUTO_LOAD = []
 MULTI_CONF = False
 
-ts20_fan_ns = cg.esphome_ns.namespace("ts20_fan")
-TS20FanController = ts20_fan_ns.class_("TS20FanController", cg.Component)
-
+xkjg200_fan_ns = cg.esphome_ns.namespace("xkjg200_fan")
+XKJG200FanController = xkjg200_fan_ns.class_("XKJG200FanController", cg.Component)
 
 CONFIG_SCHEMA = cv.Schema({
-    cv.GenerateID(): cv.declare_id(TS20FanController),
+    cv.GenerateID(): cv.declare_id(XKJG200FanController),
 }).extend(cv.COMPONENT_SCHEMA)
 
 

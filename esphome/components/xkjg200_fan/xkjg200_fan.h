@@ -6,7 +6,7 @@
 #include "esphome/core/log.h"
 
 namespace esphome {
-namespace ts20_fan {
+namespace xkjg200_fan {
 
 // ==================== 硬件配置参数 ====================
 
@@ -139,18 +139,19 @@ static void ts20_on_request_callback() {
     ++slave_write_counter;
 }
 
-// ==================== TS20FanController 类 ====================
+// ==================== XKJG200FanController 类 ====================
 
-class TS20FanController : public Component {
+class XKJG200FanController : public Component {
 public:
-    TS20FanController() = default;
+    XKJG200FanController() = default;
+    virtual ~XKJG200FanController() = default;
 
     bool slave_init_status  = false;
     bool master_init_status = false;
 
     void setup() override {
         // 首先将上位机电源断开
-        ESP_LOGI("ts20_fan", "Host power pin (GPIO%d) pulled LOW", PIN_HOST_POWER);
+        ESP_LOGI("xkjg200_fan", "Host power pin (GPIO%d) pulled LOW", PIN_HOST_POWER);
         pinMode(PIN_HOST_POWER, OUTPUT);
         digitalWrite(PIN_HOST_POWER, LOW);
         // 等待上位机掉电稳定
@@ -163,24 +164,24 @@ public:
 
         // 初始化 I2C 主机
         master_init_status = I2C_Master_Bus.begin(I2C_MASTER_SDA, I2C_MASTER_SCL, I2C_MASTER_FREQ);
-        ESP_LOGI("ts20_fan", "I2C Master init: %s", master_init_status ? "OK" : "FAILED");
+        ESP_LOGI("xkjg200_fan", "I2C Master init: %s", master_init_status ? "OK" : "FAILED");
 
         // 初始化 I2C 从机
         I2C_Slave_Bus.onReceive(ts20_on_receive_callback);
         I2C_Slave_Bus.onRequest(ts20_on_request_callback);
         slave_init_status = I2C_Slave_Bus.begin(I2C_SLAVE_ADDR, I2C_SLAVE_SDA, I2C_SLAVE_SCL, 0);
-        ESP_LOGI("ts20_fan", "I2C Slave init: %s", slave_init_status ? "OK" : "FAILED");
+        ESP_LOGI("xkjg200_fan", "I2C Slave init: %s", slave_init_status ? "OK" : "FAILED");
 
         // ESP32 初始化完成，上位机上电
-        ESP_LOGI("ts20_fan", "Host power pin (GPIO%d) pulled HIGH", PIN_HOST_POWER);
+        ESP_LOGI("xkjg200_fan", "Host power pin (GPIO%d) pulled HIGH", PIN_HOST_POWER);
         digitalWrite(PIN_HOST_POWER, HIGH);
 
-        ESP_LOGI("ts20_fan", "TS20 Fan Controller initialized");
+        ESP_LOGI("xkjg200_fan", "XKJG200 Fan Controller initialized");
     }
 
     void loop() override {
         if (!slave_init_status || !master_init_status) {
-            ESP_LOGI("ts20_fan", "slave_init_status: %s, master_init_status: %s", slave_init_status ? "OK" : "FAILED",
+            ESP_LOGI("xkjg200_fan", "slave_init_status: %s, master_init_status: %s", slave_init_status ? "OK" : "FAILED",
                      master_init_status ? "OK" : "FAILED");
         }
 
@@ -211,17 +212,17 @@ public:
     }
 
     static void init_ts20_registers() {
-        ESP_LOGI("ts20_fan", "Initializing TS20 registers...");
+        ESP_LOGI("xkjg200_fan", "Initializing TS20 registers...");
 
         for (size_t i = 0; i < sizeof(ts20_init_data) / sizeof(ts20_init_data[0]); i++) {
             I2C_Master_Bus.beginTransmission(I2C_TARGET_ADDR);
             I2C_Master_Bus.write(ts20_init_data[i], 2);
             I2C_Master_Bus.endTransmission(true);
-            ESP_LOGD("ts20_fan", "Write reg 0x%02X: 0x%02X", ts20_init_data[i][0], ts20_init_data[i][1]);
+            ESP_LOGD("xkjg200_fan", "Write reg 0x%02X: 0x%02X", ts20_init_data[i][0], ts20_init_data[i][1]);
             delay(10);
         }
 
-        ESP_LOGI("ts20_fan", "TS20 registers initialized");
+        ESP_LOGI("xkjg200_fan", "TS20 registers initialized");
     }
 
     static void update_speed_pins() {
@@ -240,7 +241,7 @@ public:
         if (new_state != current_fan_speed_state) {
             current_fan_speed_state   = new_state;
             const char *state_names[] = {"OFF", "LOW", "MID", "HIGH"};
-            ESP_LOGI("ts20_fan", "Fan speed changed: %s", state_names[static_cast<int>(new_state)]);
+            ESP_LOGI("xkjg200_fan", "Fan speed changed: %s", state_names[static_cast<int>(new_state)]);
         }
     }
 
@@ -249,11 +250,11 @@ public:
     }
 
     static void set_fan_speed(const int speed, const int retry_count = 3) {
-        ESP_LOGI("ts20_fan", "Setting fan speed: %d", speed);
+        ESP_LOGI("xkjg200_fan", "Setting fan speed: %d", speed);
 
         // 如果目标不是关闭且当前已关闭，先开启风扇
         if (speed != 0 && current_fan_speed_state == FanSpeedState::FAN_SPEED_OFF) {
-            ESP_LOGI("ts20_fan", "Turning on fan");
+            ESP_LOGI("xkjg200_fan", "Turning on fan");
             simulate_key_press(FanKey::POWER);
             update_speed_pins();
         }
@@ -261,40 +262,40 @@ public:
         switch (speed) {
             case 0:
                 if (current_fan_speed_state != FanSpeedState::FAN_SPEED_OFF) {
-                    ESP_LOGI("ts20_fan", "Turning off fan");
+                    ESP_LOGI("xkjg200_fan", "Turning off fan");
                     simulate_key_press(FanKey::POWER);
                 }
                 break;
 
             case 1:
                 if (current_fan_speed_state != FanSpeedState::FAN_SPEED_LOW) {
-                    ESP_LOGI("ts20_fan", "Setting LOW speed (economy)");
+                    ESP_LOGI("xkjg200_fan", "Setting LOW speed (economy)");
                     simulate_key_press(FanKey::ECONOMY);
                 }
                 break;
 
             case 2:
                 if (current_fan_speed_state == FanSpeedState::FAN_SPEED_LOW) {
-                    ESP_LOGI("ts20_fan", "LOW -> MID");
+                    ESP_LOGI("xkjg200_fan", "LOW -> MID");
                     simulate_key_press(FanKey::FAN_SPEED_UP);
                 } else if (current_fan_speed_state == FanSpeedState::FAN_SPEED_HIGH) {
-                    ESP_LOGI("ts20_fan", "HIGH -> MID");
+                    ESP_LOGI("xkjg200_fan", "HIGH -> MID");
                     simulate_key_press(FanKey::FAN_SPEED_DOWN);
                 }
                 break;
 
             case 3:
                 if (current_fan_speed_state == FanSpeedState::FAN_SPEED_LOW) {
-                    ESP_LOGI("ts20_fan", "LOW -> HIGH");
+                    ESP_LOGI("xkjg200_fan", "LOW -> HIGH");
                     simulate_key_press(FanKey::FAN_SPEED_UP);
                     simulate_key_press(FanKey::FAN_SPEED_UP);
                 } else if (current_fan_speed_state == FanSpeedState::FAN_SPEED_MID) {
-                    ESP_LOGI("ts20_fan", "MID -> HIGH");
+                    ESP_LOGI("xkjg200_fan", "MID -> HIGH");
                     simulate_key_press(FanKey::FAN_SPEED_UP);
                 }
                 break;
             default:
-                ESP_LOGW("ts20_fan", "Invalid speed %d, must be 0-3", speed);
+                ESP_LOGW("xkjg200_fan", "Invalid speed %d, must be 0-3", speed);
                 return;
         }
 
@@ -302,7 +303,7 @@ public:
         update_speed_pins();
         const int current = get_current_speed();
         if (current != speed && retry_count > 0) {
-            ESP_LOGW("ts20_fan", "Speed set failed, retrying... (%d left)", retry_count - 1);
+            ESP_LOGW("xkjg200_fan", "Speed set failed, retrying... (%d left)", retry_count - 1);
             set_fan_speed(speed, retry_count - 1);
         }
     }
@@ -310,7 +311,7 @@ public:
 private:
     static void update_ts20_status_cache() {
         if (ts20_read_buffer[0] != 0 || ts20_read_buffer[1] != 0) {
-            ESP_LOGD("ts20_fan", "TS20 touch: %02X %02X %02X", ts20_read_buffer[0], ts20_read_buffer[1],
+            ESP_LOGD("xkjg200_fan", "TS20 touch: %02X %02X %02X", ts20_read_buffer[0], ts20_read_buffer[1],
                      ts20_read_buffer[2]);
         }
 
@@ -408,5 +409,5 @@ private:
     }
 };
 
-}  // namespace ts20_fan
+}  // namespace xkjg200_fan
 }  // namespace esphome
