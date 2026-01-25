@@ -4,12 +4,18 @@
 
 ## 项目简介
 
-本项目是一个 PlatformIO 项目，使用 ESP32 (NodeMCU-32S) 开发板来控制美的 XKJG200 新风系统。ESP32 同时作为 I2C 主机和从机，实现与上位机（XKJG200 控制面板）和 TS20 触摸芯片的双向通信。
+本项目是一个 PlatformIO 项目(esphome目录下实现了通过esphome接入Home Assistant)，使用 ESP32 (NodeMCU-32S) 开发板来控制美的
+XKJG200 新风系统。ESP32 同时作为 I2C
+主机和从机，实现与上位机（XKJG200 控制面板）和 TS20 触摸芯片的双向通信。
+
+原本的新风面板如下图所示：
+![新风控制面板.png](doc/新风控制面板.png)
 
 ## 项目结构
 
 ```
 fan-esp32/
+├── doc/                    # 项目文档/硬件接线情况
 ├── platformio.ini          # PlatformIO 项目配置
 ├── src/
 │   └── main.cpp            # Arduino 框架主程序
@@ -40,7 +46,12 @@ fan-esp32/
                                           └─────────────────┘
 ```
 
+## 硬件接线情况
+
+- 参考doc目录下面的图片和文档
+
 ESP32 同时作为：
+
 1. **I2C 从机**：响应上位机（XKJG200 控制面板）读取触摸芯片状态
 2. **I2C 主机**：控制 TS20 触摸芯片
 3. **状态监测**：读取风速状态引脚获取当前风速
@@ -55,21 +66,23 @@ ESP32 同时作为：
 ## 硬件配置
 
 ### 开发板
+
 - ESP32 NodeMCU-32S
 
 ### 引脚配置
 
-| 功能 | GPIO 引脚 | 说明 |
-|-----|----------|------|
-| I2C 从机 SDA | GPIO 21 | 连接上位机 |
-| I2C 从机 SCL | GPIO 22 | 连接上位机 |
-| I2C 主机 SDA | GPIO 16 | 连接 TS20 |
-| I2C 主机 SCL | GPIO 17 | 连接 TS20 |
-| 低风速状态 | GPIO 25 | 风速 LED 状态输入 |
-| 中风速状态 | GPIO 26 | 风速 LED 状态输入 |
-| 高风速状态 | GPIO 27 | 风速 LED 状态输入 |
+| 功能         | GPIO 引脚 | 说明          |
+|------------|---------|-------------|
+| I2C 从机 SDA | GPIO 21 | 连接上位机       |
+| I2C 从机 SCL | GPIO 22 | 连接上位机       |
+| I2C 主机 SDA | GPIO 16 | 连接 TS20     |
+| I2C 主机 SCL | GPIO 17 | 连接 TS20     |
+| 低风速状态      | GPIO 25 | 风速 LED 状态输入 |
+| 中风速状态      | GPIO 26 | 风速 LED 状态输入 |
+| 高风速状态      | GPIO 27 | 风速 LED 状态输入 |
 
 ### I2C 地址
+
 - 从机地址（响应上位机）：`0x7A`
 - TS20 芯片地址：`0x7A`（ADD 引脚接 VDD）
 
@@ -110,6 +123,5 @@ pio device monitor
 
 ## 参考资料
 
-- [TS20 触摸芯片规格书](触摸芯片_TS20_规格书_WJ292953.PDF)
 - [PlatformIO 文档](https://docs.platformio.org/)
 - [ESPHome 文档](https://esphome.io/)
