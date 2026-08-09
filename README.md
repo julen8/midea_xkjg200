@@ -1,33 +1,21 @@
-# 美的 XKJG200 新风控制器 - ESP32 项目
+# 美的 XKJG200 新风控制器 ESPHome 组件
 
-基于 ESP32 的美的 XKJG200 新风系统控制器，通过模拟 TS20 触摸芯片按键来实现远程风扇控制。
+本项目使用 ESPHome 和 ESP32 来控制美的 XKJG200 新风系统，通过模拟 TS20 触摸芯片按键来实现风扇控制。
 
-## 项目简介
+## 效果展示
 
-本项目是一个 PlatformIO 项目(esphome目录下实现了通过esphome接入Home Assistant)，使用 ESP32 (NodeMCU-32S) 开发板来控制美的
-XKJG200 新风系统。ESP32 同时作为 I2C
-主机和从机，实现与上位机（XKJG200 控制面板）和 TS20 触摸芯片的双向通信。
+- 原本的新风面板能正常控制使用，并且状态会同步到 Home Assistant 中
+- Home Assistant 中可以远程控制新风系统的开关和风速，并且原来的面板状态也会同步更新
 
-原本的新风面板如下图所示：
-![新风控制面板.png](doc/新风控制面板.png)
+![效果.png](doc/效果.png)
 
-## 项目结构
+## 功能特性
 
-```
-fan-esp32/
-├── doc/                    # 项目文档/硬件接线情况
-├── platformio.ini          # PlatformIO 项目配置
-├── src/
-│   └── main.cpp            # Arduino 框架主程序
-├── esphome/                # ESPHome 实现版本
-│   ├── fan-controller.yaml # ESPHome 配置文件
-│   ├── components/         # 自定义 ESPHome 组件
-│   │   └── xkjg200_fan/    # XKJG200 风扇控制器组件
-│   └── README.md           # ESPHome 版本详细说明
-├── include/
-├── lib/
-└── test/
-```
+- ✅ 通过 Home Assistant 远程控制新风系统
+- ✅ 支持3档风速调节（低/中/高）
+- ✅ 实时显示当前风速状态
+- ✅ Web 界面控制
+- ✅ OTA 固件更新
 
 ## 工作原理
 
@@ -46,82 +34,135 @@ fan-esp32/
                                           └─────────────────┘
 ```
 
-## 硬件接线情况
-
-- 参考doc目录下面的图片和文档
-
 ESP32 同时作为：
 
-1. **I2C 从机**：响应上位机（XKJG200 控制面板）读取触摸芯片状态
+1. **I2C 从机**：响应上位机(XKJG200控制面板)读取触摸芯片状态
 2. **I2C 主机**：控制 TS20 触摸芯片
 3. **状态监测**：读取风速状态引脚获取当前风速
 
-## 功能特性
+## 硬件连接
 
-- ✅ 支持 3 档风速调节（低/中/高）
-- ✅ 实时监测当前风速状态
-- ✅ 模拟 TS20 触摸芯片按键输入
-- ✅ I2C 双向通信（主机+从机模式）
+- 参考 项目根目录下`doc/` 目录下的图片和文档
 
-## 硬件配置
+### I2C 从机配置 (连接上位机)
 
-### 开发板
+| ESP32 引脚 | 功能  |
+|----------|-----|
+| GPIO 21  | SDA |
+| GPIO 22  | SCL |
 
-- ESP32 NodeMCU-32S
+I2C 从机地址：`0x7A`
+这两个引脚都需要外接上拉电阻(约10kΩ)
 
-### 引脚配置
+### I2C 主机配置 (连接 TS20 触摸芯片)
 
-| 功能         | GPIO 引脚 | 说明             |
-|------------|---------|----------------|
-| I2C 从机 SDA | GPIO 21 | 连接上位机(需要上拉10k) |
-| I2C 从机 SCL | GPIO 22 | 连接上位机(需要上拉10k) |
-| I2C 主机 SDA | GPIO 16 | 连接 TS20        |
-| I2C 主机 SCL | GPIO 17 | 连接 TS20        |
-| 低风速状态      | GPIO 25 | 风速 LED 状态输入    |
-| 中风速状态      | GPIO 26 | 风速 LED 状态输入    |
-| 高风速状态      | GPIO 27 | 风速 LED 状态输入    |
+| ESP32 引脚 | 功能  |
+|----------|-----|
+| GPIO 16  | SDA |
+| GPIO 17  | SCL |
 
-### I2C 地址
+I2C 主机频率：100kHz，目标地址：`0x7A`
 
-- 从机地址（响应上位机）：`0x7A`
-- TS20 芯片地址：`0x7A`（ADD 引脚接 VDD）
+### 风速状态输入引脚 (LED 状态检测，低电平有效)
 
-## 编译与烧录
+| ESP32 引脚 | 功能  |
+|----------|-----|
+| GPIO 25  | 低风速 |
+| GPIO 26  | 中风速 |
+| GPIO 27  | 高风速 |
 
-### 使用 PlatformIO
+### 上位机电源控制
+
+| ESP32 引脚 | 功能             |
+|----------|----------------|
+| GPIO 4   | 上位机电源控制（低电平断电） |
+
+
+## 快速开始
+
+### 1. 配置密钥文件
+
+复制示例密钥文件并修改为实际配置：
 
 ```bash
-# 编译项目
-pio run
-
-# 烧录到 ESP32
-pio run --target upload
-
-# 打开串口监视器
-pio device monitor
+cp example_secrets.yaml secrets.yaml
 ```
 
-### 使用 PlatformIO IDE
+编辑 `secrets.yaml`：
 
-1. 使用 VS Code 打开项目文件夹
-2. 安装 PlatformIO 扩展
-3. 点击 PlatformIO 工具栏的 Build/Upload 按钮
+```yaml
+wifi_ssid: "你的WiFi名称"
+wifi_password: "你的WiFi密码"
+api_xkjg200_key: "你的API加密密钥"
+ota_key: "你的OTA密码"
+```
 
-## ESPHome 版本
+> 💡 可使用 `openssl rand -base64 32` 生成 API 加密密钥
 
-`esphome/` 目录包含本项目的 ESPHome 实现版本，支持通过 Home Assistant 进行远程控制。
+### 2. 编译和上传
 
-### ESPHome 功能特性
+使用 ESPHome 编译并上传固件：
 
-- ✅ 通过 Home Assistant 远程控制新风系统
-- ✅ 支持 3 档风速调节（低/中/高）
-- ✅ 实时显示当前风速状态
-- ✅ Web 界面控制
-- ✅ OTA 固件更新
+```bash
+esphome run fan-controller.yaml
+```
 
-详细信息请参阅 [esphome/README.md](esphome/README.md)
+### 3. 添加到 Home Assistant
 
-## 参考资料
+固件上传后，Home Assistant 会自动发现设备。使用配置文件中的 API 加密密钥添加设备即可。
 
-- [PlatformIO 文档](https://docs.platformio.org/)
-- [ESPHome 文档](https://esphome.io/)
+## 组件使用
+
+### 配置示例
+
+```yaml
+# 加载外部组件
+external_components:
+  - source: github://julen8/midea_xkjg200
+    components: [ xkjg200_fan ]
+
+# xkjg200 风扇控制器组件
+xkjg200_fan:
+  id: xkjg200_controller
+
+# 风扇组件
+fan:
+  - platform: template
+    name: "新风"
+    id: main_fan
+    speed_count: 3
+    on_turn_on:
+      - lambda: |-
+          int speed = id(main_fan).speed;
+          if (speed == 0) speed = 2;
+          id(xkjg200_controller)->set_fan_speed(speed);
+    on_turn_off:
+      - lambda: |-
+          id(xkjg200_controller)->set_fan_speed(0);
+```
+
+> 具体配置参见 `fan-controller.yaml`
+
+### API 方法
+
+| 方法                         | 说明                       |
+|----------------------------|--------------------------|
+| `set_fan_speed(int speed)` | 设置风速：0=关闭, 1=低, 2=中, 3=高 |
+| `get_current_speed()`      | 获取当前风速档位 (0-3)           |
+| `init_ts20_registers()`    | 重新初始化 TS20 触摸芯片寄存器       |
+
+## 触摸按键编码
+
+| 按键  | 数据 (buffer[0], buffer[1], buffer[2]) |
+|-----|--------------------------------------|
+| 开关  | `0x04, 0x00, 0x00`                   |
+| 经济  | `0x20, 0x00, 0x00`                   |
+| 风速+ | `0x00, 0x01, 0x00`                   |
+| 风速- | `0x10, 0x00, 0x00`                   |
+
+## Web 界面
+
+设备启动后可通过 `http://<设备IP>/` 访问 Web 界面进行控制。
+
+如果无法连接 WiFi，设备会创建一个名为 `xkjg200-AP` 的热点（密码：`12345678`），连接后可通过 captive portal 配置 WiFi。
+
