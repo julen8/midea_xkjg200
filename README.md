@@ -130,6 +130,18 @@ esphome run fan-controller.yaml
 ### 配置示例
 
 ```yaml
+# ESP-IDF 的 I2C 从机 v2 驱动是组件当前使用的接口
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    version: recommended
+    advanced:
+      minimum_chip_revision: "3.0"
+      sram1_as_iram: true
+    sdkconfig_options:
+      CONFIG_I2C_ENABLE_SLAVE_DRIVER_VERSION_2: y
+
 # 加载外部组件
 external_components:
   - source: github://julen8/midea_xkjg200
@@ -138,21 +150,9 @@ external_components:
 # xkjg200 风扇控制器组件
 xkjg200_fan:
   id: xkjg200_controller
-
-# 风扇组件
-fan:
-  - platform: template
-    name: "新风"
-    id: main_fan
-    speed_count: 3
-    on_turn_on:
-      - lambda: |-
-          int speed = id(main_fan).speed;
-          if (speed == 0) speed = 2;
-          id(xkjg200_controller)->set_fan_speed(speed);
-    on_turn_off:
-      - lambda: |-
-          id(xkjg200_controller)->set_fan_speed(0);
+  name: "新风"
+  speed_count: 3
+  restore_mode: ALWAYS_OFF
 ```
 
 > 具体配置参见 `fan-controller.yaml`

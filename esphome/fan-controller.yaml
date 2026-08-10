@@ -15,7 +15,13 @@ esphome:
 esp32:
   board: esp32dev
   framework:
-    type: arduino
+    type: esp-idf
+    version: recommended
+    advanced:
+      minimum_chip_revision: "3.0"
+      sram1_as_iram: true
+    sdkconfig_options:
+      CONFIG_I2C_ENABLE_SLAVE_DRIVER_VERSION_2: y
 
 # 加载外部组件
 external_components:
@@ -57,57 +63,24 @@ ota:
 # xkjg200 风扇控制器组件
 xkjg200_fan:
   id: xkjg200_controller
+  name: "新风"
+  speed_count: 3
+  restore_mode: ALWAYS_OFF
 
-# 风扇组件
-fan:
+text_sensor:
   - platform: template
-    name: "新风"
-    id: main_fan
-    has_direction: false
-    has_oscillating: false
-    speed_count: 3
-    restore_mode: ALWAYS_OFF
-    on_turn_on:
-      then:
-        - lambda: |-
-            int speed = id(main_fan).speed;
-            if (speed == 0) speed = 2;  // 默认中风速
-            id(xkjg200_controller)->set_fan_speed(speed);
-    on_turn_off:
-      then:
-        - lambda: |-
-            id(xkjg200_controller)->set_fan_speed(0);
-    on_speed_set:
-      then:
-        - lambda: |-
-            if (id(main_fan).state) {
-              id(xkjg200_controller)->set_fan_speed(id(main_fan).speed);
-            }
-
-# 风速状态传感器 (用于显示当前实际风速档位: 0-3)
-sensor:
-  - platform: template
-    name: "当前风速档位"
-    id: current_fan_speed
+    name: "新风状态"
+    id: fresh_air_status
     icon: "mdi:fan"
-    accuracy_decimals: 0
     update_interval: 500ms
     lambda: |-
-      return id(xkjg200_controller)->get_current_speed();
-    on_value:
-      then:
-        - lambda: |-
-            // 同步风扇状态到 ESPHome 风扇组件
-            auto call = id(main_fan).make_call();
-            int speed = (int)x;
-            if (speed == 0) {
-              call.set_state(false);
-            } else {
-              call.set_state(true);
-              call.set_speed(speed);
-            }
-            call.perform();
-
+      switch (id(xkjg200_controller)->get_current_speed()) {
+        case 0: return {"关闭"};
+        case 1: return {"低风速"};
+        case 2: return {"中风速"};
+        case 3: return {"高风速"};
+        default: return {"未知"};
+      }
 
 # 仅调试用 - 重新初始化 TS20 触摸芯片寄存器
 switch:
@@ -120,20 +93,3 @@ switch:
       - lambda: |-
           id(xkjg200_controller)->init_ts20_registers();
       - switch.turn_off: reinit_ts20
-
-# 文本传感器 - 显示风速状态文字
-text_sensor:
-  - platform: template
-    name: "风速状态"
-    id: fan_speed_text
-    icon: "mdi:fan"
-    update_interval: 500ms
-    lambda: |-
-      int speed = id(xkjg200_controller)->get_current_speed();
-      switch (speed) {
-        case 0: return std::string("关闭");
-        case 1: return std::string("低风速");
-        case 2: return std::string("中风速");
-        case 3: return std::string("高风速");
-        default: return std::string("未知");
-      }
