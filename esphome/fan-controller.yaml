@@ -58,7 +58,7 @@ api:
 # OTA 更新
 ota:
   - platform: esphome
-    password: !secret ota_key
+    encryption:
 
 # xkjg200 风扇控制器组件
 xkjg200_fan:
