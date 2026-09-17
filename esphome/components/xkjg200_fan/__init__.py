@@ -1,5 +1,6 @@
 import esphome.codegen as cg
 from esphome.components import fan
+from esphome.components.esp32 import include_builtin_idf_component
 import esphome.config_validation as cv
 from esphome.const import CONF_ID, CONF_SPEED_COUNT
 
@@ -17,6 +18,7 @@ CONFIG_SCHEMA = fan.fan_schema(XKJG200FanController).extend({
 
 
 async def to_code(config):
+    include_builtin_idf_component("esp_driver_i2c")
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     await fan.register_fan(var, config)
